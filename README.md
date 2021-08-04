@@ -1,5 +1,5 @@
-# camera_lens_glare
-camera_lens_glare_reduction
+# Soil Semantic Segmentation
+Soil semantic segmentation trainer.
 
 ***Dataset setting***
 1. Download dataset
