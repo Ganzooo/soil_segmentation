@@ -149,3 +149,6 @@ flare_venv/
 scripts/cur/
 scripts/results/
 scripts/wandb/
+
+#gz
+cur/*
