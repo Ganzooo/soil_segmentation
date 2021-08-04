@@ -11,11 +11,8 @@ timm
 --find-links https://download.pytorch.org/whl/torch_stable.html
 torch==1.7.1+cu110
 torchvision==0.8.2+cu110
-#torchaudio==0.7.2
 tensorflow
 wandb
 adamp
-git+https://github.com/fadel/pytorch_ema
-git+https://github.com/ildoonet/pytorch-gradual-warmup-lr.git
 git+https://github.com/katsura-jp/pytorch-cosine-annealing-with-warmup
 

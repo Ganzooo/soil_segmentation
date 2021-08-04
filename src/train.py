@@ -23,11 +23,6 @@ from dataset.dataloader import load_dataset
 from models.hardnet_val import hardnet_val
 from models.resnet50_unet_activation import UNetWithResnet50Encoder
 from models.resnet50_unet_activation_DUA import UNetWithResnet50EncoderDUA
-from models.resnet50_unet_activation_bilinear import UNetWithResnet50EncoderBi
-from models.resnet50_unet_activation_drop import UNetWithResnet50Encoder_act_drop
-from models.resnet50_unet_activation_no_bn import UNetWithResnet50Encoder_act_no_bn
-from models.MIRNet_model import MIRNet
-from models.Uformer import Uformer
 
 from utils.utils import get_logger, make_dir
 from icecream import ic
@@ -37,10 +32,11 @@ from utils.image_utils import save_img, batch_PSNR
 import options
 from metrics import runningScore
 
-#import apex
-#from apex.parallel import DistributedDataParallel as DDP
-#from apex.fp16_utils import *
-#from apex import amp, optimizers
+import apex
+from apex.parallel import DistributedDataParallel as DDP
+from apex.fp16_utils import *
+from apex import amp, optimizers
+
 from losses import CharbonnierLoss, ContentLossWithMask, LossWithMask, bootstrapped_cross_entropy2d
 from warmup_scheduler import GradualWarmupScheduler
 from torch.optim.lr_scheduler import StepLR
@@ -52,7 +48,7 @@ from adamp import AdamP
 
 #Add wanddb
 import wandb
-os.environ["WANDB_API_KEY"] = "0b0a03cb580e75ef44b4dff7f6f16ce9cfa8a290"
+#os.environ["WANDB_API_KEY"] = "0b0a03cb580e75ef44b4dff7f6f16ce9cfa8a290"
 #os.environ["WANDB_MODE"] = "dryrun"
 
 ######### Set Seeds ###########
@@ -60,7 +56,6 @@ random.seed(1234)
 np.random.seed(1234)
 torch.manual_seed(1234)
 torch.cuda.manual_seed_all(1234)
-
 
 class Trainer(object):
     def __init__(self, args, logger, writer):
@@ -109,13 +104,7 @@ class Trainer(object):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         ######### Get Model ###########
-        if args.model_type == "MIRNet":
-            self.model = MIRNet().to(self.device)
-            ic('MIRNet')
-        elif args.model_type == "Uformer16":
-            self.model = Uformer(img_size=self.width,embed_dim=16,win_size=8,token_embed='linear',token_mlp='leff').to(self.device)
-            ic('Uformer16')
-        elif args.model_type == "hardnet":
+        if args.model_type == "hardnet":
             self.model = hardnet_val().to(self.device)
         elif args.model_type == "resnet_unet_dua":
             self.model = UNetWithResnet50EncoderDUA().to(self.device)
@@ -175,6 +164,10 @@ class Trainer(object):
             self.optimizer = AdamP(self.model.parameters(), lr=args.lr_initial, betas=(0.9, 0.999), weight_decay=args.weight_decay)
         elif args.optimizer == 'sgd':
             self.optimizer = optim.SGD(self.model.parameters(), lr=args.lr_initial, momentum=0.9, weight_decay=args.weight_decay)
+        
+        ######### Initialize APEX Mixed Prediction ###########
+        if args.apex:
+            self.model, self.optimizer = amp.initialize(self.model, self.optimizer, opt_level=args.opt_level)
 
         ######### Scheduler ###########
         warmup = False
@@ -254,7 +247,11 @@ class Trainer(object):
                 loss = self.criterion(pred, gt)
 
             self.optimizer.zero_grad()
-            loss.backward()
+            if self.args.apex:
+                with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+                    scaled_loss.backward()
+            else:
+                loss.backward()
             self.optimizer.step()
 
             # Update the moving average with the new parameters from the last optimizer step
@@ -262,9 +259,6 @@ class Trainer(object):
                 self.ema_model.update()
 
             loss_sum += loss.item()
-
-            # PSNR
-            #psnr_rgb.append(batch_PSNR(pred[1].detach(), gt, 1.))
 
             # Dump train images 
             if self.args.save_image_train and np.mod(self.epo, self.args.save_print_interval) == 0:
@@ -327,14 +321,9 @@ class Trainer(object):
             with torch.no_grad():
                 ###Pred image ###
                 pred, pred_id = self.model(img)
-                #pred = torch.clamp(pred,0,1) 
-                #psnr_val_rgb.append(batch_PSNR(pred, gt, 1.))
 
                 #For tensorboard
-                if 'mask' in self.args.loss_type:
-                    loss = self.criterion(pred, gt, img)
-                else:
-                    loss = self.criterion(pred, gt)
+                loss = self.criterion(pred, gt)
                 loss_sum += loss.item()
 
                 pred_id_ = pred_id.cpu().numpy()
@@ -342,13 +331,17 @@ class Trainer(object):
                 self.running_metrics_val.update(gt_, pred_id_)
 
             if self.args.save_image_val and np.mod(self.epo, self.args.save_print_interval) == 0:
-                gt = gt.permute(0, 2, 3, 1).cpu().detach().numpy()
+                gt = gt.cpu().detach().numpy()
                 img = img.permute(0, 2, 3, 1).cpu().detach().numpy()
-                pred = pred.permute(0, 2, 3, 1).cpu().detach().numpy()
-                
-                for batch in range(img.shape[0]):
-                    temp = np.concatenate((img[batch]*255.0, pred[batch]*255.0, gt[batch]*255.0),axis=1)
-                    save_img(osp.join(self.args.result_dir + '/val/'+ str(index) + fname[batch][:-4] +'.jpg'),temp.astype(np.uint8), color_domain=self.args.color_domain)
+                pred_ = pred_id.cpu().detach().numpy()
+
+                for batch in range(self.args.batch_size):
+                    gtRGB = self.decode_segmap(gt[batch])
+                    predRGB = self.decode_segmap(pred_[batch])
+                    overlapRGB = img[batch] * 0.7 + predRGB * 0.3
+
+                    temp0 = np.concatenate((img[batch]*255, gtRGB*255, overlapRGB*255),axis=1)
+                    save_img(osp.join(self.args.work_dir, 'result_img','validation',fname[batch]),temp0.astype(np.uint8), color_domain=self.args.color_domain)
 
             tq.set_postfix(loss='{0:0.4f} '.format(loss_sum/iter))
         tq.close()

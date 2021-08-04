@@ -16,5 +16,6 @@ pip install -r requirements.txt
 python src/train_no_apex.py --batch_size 4 --max_epoch 50 --data_path *[data_path]* --width 1280 --height 980 --model_type hardnet --work_dir ./cur/soil_detection/
 
 ToDo:
-[] Dataset modify 
-[] Inference module add
+[] Dataset modify -> Generate 3 classes. 
+[] Inference module add.
+[] Augmentation method add.

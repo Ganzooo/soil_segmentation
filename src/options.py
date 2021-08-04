@@ -31,14 +31,14 @@ class Options():
         parser.add_argument('--distributed', type=distutils.util.strtobool,help='Distributed training mode', default=False)
         
         ### Apex settings
+        parser.add_argument('--apex', type=distutils.util.strtobool, help='Enable Apex mixed prediction True/False', default = True)
         parser.add_argument('--opt-level', type=str, default = 'O1')
         parser.add_argument('--keep-batchnorm-fp32', type=str, default=None)
         parser.add_argument('--loss-scale', type=str, default=None)
         
         ###Log info setting
-        parser.add_argument('--save_image', type=distutils.util.strtobool, help='Save test set images when best psnr found', default=False)
         parser.add_argument('--save_image_train', type=distutils.util.strtobool, help='Save train images firs 20 epoch', default=True)
-        parser.add_argument('--save_image_val', type=distutils.util.strtobool, help='Save validation images', default=False)
+        parser.add_argument('--save_image_val', type=distutils.util.strtobool, help='Save validation images', default=True)
         parser.add_argument('--save_print_interval', type=int, help='Save validation images', default=1)
         parser.add_argument('--work_dir', type=str, help='Work directory cur/bcnn', default='./cur/soil_segment_basic')
         
