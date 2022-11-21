@@ -15,27 +15,9 @@ from albumentations.pytorch import ToTensorV2
 
 
 def load_dataset(data_path, batch_size, distributed, center_crop=False, random_crop=False, resize_size=(512,512), model_type='baseline', color_domain='rgb'):
-    if random_crop:
-        transformer_train = A.Compose([
-            #A.Resize(resize_size[0],resize_size[1]),
-            A.RandomCrop(width=resize_size[0], height=resize_size[1]),
-            A.HorizontalFlip(p=0.5),
-            A.RandomRotate90(p=0.5),
-            A.VerticalFlip(p=0.5),
-            ToTensorV2()
-            ])
-    elif center_crop:
-        transformer_train = A.Compose([
-            #A.Resize(resize_size[0],resize_size[1]),
-            #A.RandomCrop(width=resize_size[0], height=resize_size[1]),
-            A.HorizontalFlip(p=0.5),
-            A.RandomRotate90(p=0.5),
-            A.VerticalFlip(p=0.5),
-            ToTensorV2()
-            ])
-    else: 
-        transformer_train = A.Compose([
-            #A.Resize(resize_size[0],resize_size[1]),
+
+    transformer_train = A.Compose([
+            A.Resize(resize_size[0],resize_size[1]),
             #A.RandomCrop(width=resize_size[0], height=resize_size[1]),
             A.HorizontalFlip(p=0.5),
             A.RandomRotate90(p=0.5),
@@ -50,8 +32,8 @@ def load_dataset(data_path, batch_size, distributed, center_crop=False, random_c
     train_dataset = DataLoaderImg(data_path, mode='train', resize_size=resize_size, transform=transformer_train, color_domain=color_domain)
     val_dataset = DataLoaderImg(data_path, mode='val', resize_size=resize_size, transform=transformer_valid, color_domain=color_domain)
     
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=16, pin_memory=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=16, pin_memory=False)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=False)
     
     return train_dataloader, val_dataloader
 

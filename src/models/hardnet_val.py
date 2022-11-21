@@ -92,7 +92,6 @@ class HarDBlock_v2(nn.Module):
             w_src = blk.layers[i][0].weight
             b_src = blk.layers[i][0].bias
             
-            
             self.conv_layers[i].weight[0:part[0], :, :,:] = w_src[:, 0:in_ch, :,:]
             self.layer_bias.append(b_src)
             
@@ -114,7 +113,7 @@ class HarDBlock_v2(nn.Module):
             link_ch.reverse()
             link.reverse()
             if len(link) > 1:
-                for j in range(1, len(link) ):
+                for j in range(1, len(link)):
                     ly  = link[j]
                     part_id  = self.out_partition[ly].index(part[0])
                     chos = sum( self.out_partition[ly][0:part_id] )
