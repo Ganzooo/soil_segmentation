@@ -441,8 +441,8 @@ class Trainer(object):
                 pred, pred_id = self.model(img)
 
                 #For tensorboard
-                #loss = self.criterion(pred, gt)
-                #loss_sum += loss.item()
+                loss = self.criterion(pred, gt)
+                loss_sum += loss.item()
 
                 pred_id_ = pred_id.cpu().numpy()
                 gt_ = gt.data.cpu().numpy()

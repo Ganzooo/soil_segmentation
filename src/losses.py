@@ -151,7 +151,7 @@ class bootstrapped_cross_entropy2d(torch.nn.modules.loss._Loss):
             target = target.view(-1)
 
             loss = F.cross_entropy(
-                input, target, weight=weight, reduce=self.reduce, size_average=self.size_average, ignore_index=250
+                input, target, weight=weight, reduce=self.reduce, size_average=self.size_average, ignore_index=3
             )
             sorted_loss, _ = torch.sort(loss, descending=True)
 

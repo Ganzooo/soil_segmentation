@@ -12,38 +12,28 @@ class Options():
 
         ### General settings:
         parser.add_argument('--data_path', '-dp', type=str, help='Training data path',
-<<<<<<< HEAD
                             #default='//dataset2/soiling_dataset_new/')
                             default='/dataset/Woodscape/soiling_dataset_nodist_150/')
-=======
-                            default='//dataset2/soiling_dataset_new/')
->>>>>>> d64ce0ab45b756d7c0b254e3e1f2a824c085ef48
         parser.add_argument('--batch_size', '-bs', type=int, help='batch size',
-                            default=1)
+                            default=10)
         parser.add_argument('--max_epoch', '-me', type=int, help='max epoch',
-                            default=300)
+                            default=100)
         parser.add_argument('--pretrained_model', '-p', type=str, help='Pretrained model path',
-                            #default='/workspace/NETWORK/ketiai_new/camera_lens_glare/checkpoints/glare_latestmodel.pth')
-                            default=None)
+                            default='/workspace/16_Demo/soil_segmentation/checkpoints/soil_segment_bestmodel_0_822.pth')
+                            #default=None)
         parser.add_argument('--test_model', '-t', type=str, help='Pretrained model path',
-                            #default='/workspace/NETWORK/ketiai_new/camera_lens_glare/checkpoints/glare_latestmodel.pth')
-                            default='/workspace/05_SOIL_DETECION/soil_segmentation/checkpoints/soil_segment_bestmodel_0_822.pth')
+                            default='/workspace/16_Demo/soil_segmentation/checkpoints/soil_segment_bestmodel_0_905_dist50.pth')
+                            #default='/workspace/16_Demo/soil_segmentation/checkpoints/soil_segment_bestmodel_0_822.pth')
         parser.add_argument('--width', type=int, help='feature map width',
-<<<<<<< HEAD
                             #default=1280)
                             #default=512)
                             default=992)
+                            #default=320)
         parser.add_argument('--height', type=int, help='feature map height',
                             #default=960)
                             #default=512)
                             default=736)
-=======
-                            default=1280)
-                            #default=512)
-        parser.add_argument('--height', type=int, help='feature map height',
-                            default=960)
-                            #default=512)
->>>>>>> d64ce0ab45b756d7c0b254e3e1f2a824c085ef48
+                            #default=224)
         parser.add_argument('--resume', type=str, help='Train process resume cur/bcnn_latestmodel.pt',
                             #default='/workspace/NETWORK/camera_lens_glare/checkpoints/glare_bestmodel_25.205883026123047.pth')
                             #default= '/workspace/NETWORK/ketiai_new/camera_lens_glare/checkpoints/glare_latestmodel.pth')
@@ -51,7 +41,7 @@ class Options():
         parser.add_argument('--distributed', type=distutils.util.strtobool,help='Distributed training mode', default=False)
         
         ### Apex settings
-        parser.add_argument('--apex', type=distutils.util.strtobool, help='Enable Apex mixed prediction True/False', default = True)
+        parser.add_argument('--apex', type=distutils.util.strtobool, help='Enable Apex mixed prediction True/False', default = False)
         parser.add_argument('--opt-level', type=str, default = 'O1')
         parser.add_argument('--keep-batchnorm-fp32', type=str, default=None)
         parser.add_argument('--loss-scale', type=str, default=None)
@@ -60,7 +50,7 @@ class Options():
         parser.add_argument('--save_image_train', type=distutils.util.strtobool, help='Save train images firs 20 epoch', default=True)
         parser.add_argument('--save_image_val', type=distutils.util.strtobool, help='Save validation images', default=True)
         parser.add_argument('--save_print_interval', type=int, help='Save validation images', default=1)
-        parser.add_argument('--work_dir', type=str, help='Work directory cur/bcnn', default='./cur/soil_segment_ddrnet23_slim')
+        parser.add_argument('--work_dir', type=str, help='Work directory cur/bcnn', default='./cur/soil_segment_ddrnet23/soiling_dataset_nodist_150/')
         
         ### Train settings
         parser.add_argument('--model_type', type=str, help='hardnet, ddrnet  ', default='ddrnet')

@@ -4,16 +4,24 @@ import math
 import cv2
 from pathlib import Path
 
-data_path = '/dataset/Woodscape/soiling_dataset_nodist_50/'
-# Hcrop = 736
-# Wcrop = 992
-Hcrop = 224
-Wcrop = 320
+data_path = '/dataset/Woodscape/soiling_dataset_nodist_150/'
+dataset_type = 'train'
 
-dataset_type = 'val'
+if data_path == "/dataset/Woodscape/soiling_dataset_nodist_150/":
+    Hcrop = 736
+    Wcrop = 992
+else: 
+    Hcrop = 224
+    Wcrop = 320
 
-gtOutPath = data_path + 'test/gtLabels_crop/'
-rgbOutPath = data_path + 'test/rgbImages_crop/'
+if dataset_type == 'val':
+    gtOutPath = data_path + 'test/gtLabels_crop/'
+    rgbOutPath = data_path + 'test/rgbImages_crop/'
+    gtRgbOutPath = data_path + 'test/rgbLabels_crop/'
+else: 
+    gtOutPath = data_path + 'train/gtLabels_crop/'
+    rgbOutPath = data_path + 'train/rgbImages_crop/'
+    gtRgbOutPath = data_path + 'train/rgbLabels_crop/'
 
 if __name__ == "__main__":
     if dataset_type == 'train':
@@ -30,5 +38,18 @@ if __name__ == "__main__":
         _img = img[:Hcrop, :Wcrop, :]
         _gt = gt[:Hcrop, :Wcrop]
         
-        cv2.imwrite(gtOutPath+str(imgPath.name), _gt)
+        _gtRGB = np.zeros((Hcrop,Wcrop,3))
+        _gtNEW = np.zeros_like(_gt)
+        
+        ## Need to Class 1 to Class 0
+        _gtNEW[_gt==1] = 0
+        _gtNEW[_gt==2] = 1
+        _gtNEW[_gt==3] = 2
+        
+        _gtRGB[_gtNEW==3] = (255,255,255)
+        _gtRGB[_gtNEW==2] = (0,0,255)
+        _gtRGB[_gtNEW==1] = (255,0,0)
+        #gtRgbOutPath
+        cv2.imwrite(gtRgbOutPath+str(imgPath.name), _gtRGB)
+        cv2.imwrite(gtOutPath+str(imgPath.name), _gtNEW)
         cv2.imwrite(rgbOutPath+str(imgPath.name), _img)

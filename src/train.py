@@ -616,10 +616,10 @@ if __name__ == "__main__":
     writer = SummaryWriter(log_dir=args.work_dir + '/log')
 
     trainer = Trainer(args=args, logger=logger, writer=writer)
-    #trainer.train()
+    trainer.train()
     
     ###Segment Soil.
-    trainer.test()
+    #trainer.test()
     
     ###Detect camera failure.
     #trainer.test_camera_failure()

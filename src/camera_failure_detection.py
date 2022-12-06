@@ -531,9 +531,19 @@ class Trainer(object):
                 predRGB = self.decode_segmap(pred_[batch])
                 overlapRGB = img[batch] * 0.7 + predRGB * 0.3
 
+                nH = gtRGB.shape[0]
+                nW = gtRGB.shape[1]
+                
+                if nW == 1280 and nH == 960: 
                 ###Calculate soil ratio from gt
-                ROI_H = [160,800]
-                ROI_W = [160,1120]
+                    ROI_H = [160,800]
+                    ROI_W = [160,1120]
+                elif nW == 992 and nH == 736:
+                    ROI_H = [64,672]
+                    ROI_W = [64,928]
+                else: 
+                    ROI_H = [32,192]
+                    ROI_W = [32,288]
                 
                 _gtR = gtRGB[:,:,1]*255
                 _gtR_ROI = _gtR[ROI_H[0]:ROI_H[1],ROI_W[0]:ROI_W[1]]
@@ -547,8 +557,8 @@ class Trainer(object):
                 overlap_ratio = np.round(float(calculate_region_of_frame / (_predR_ROI.shape[0] * _predR_ROI.shape[1])) * 100, 2)
 
                 temp0 = np.concatenate((img[batch]*255, overlapRGB*255),axis=1)
-                temp0 = cv2.rectangle(temp0,(160,160),(1120,800), (255,0,0),3)
-                temp0 = cv2.rectangle(temp0,(1280+160,160),(1280+1120,800), (255,0,0),3)
+                temp0 = cv2.rectangle(temp0,(ROI_W[0],ROI_H[0]),(ROI_W[1],ROI_H[1]), (255,0,0),3)
+                temp0 = cv2.rectangle(temp0,(nW+ROI_W[0],ROI_H[0]),(nW+ROI_W[1],ROI_H[1]), (255,0,0),3)
                 save_img(osp.join(self.args.work_dir, 'result_img','camera_lens_failure',fname[batch]),temp0.astype(np.uint8), color_domain=self.args.color_domain)
                 
                 status_type = ['Fail', 'Normal']
@@ -566,7 +576,7 @@ class Trainer(object):
                 #print('Filename: {} \t Lens status: {} \t Soiled ratio: {}'.format(fname[0], status_lens, float(overlap_ratio)))    
                 
                 
-                with open(osp.join(self.args.work_dir, 'camera_failure_gt.csv'),'a') as f:
+                with open(osp.join(self.args.data_path, 'camera_failure_gt.csv'),'a') as f:
                     f.write('{},{}, {} \n'.format(fname[0], overlap_ratio_gt, status_lens_gt))
                     
                 with open(osp.join(self.args.work_dir, 'camera_failure_detection_result.csv'),'a') as f:

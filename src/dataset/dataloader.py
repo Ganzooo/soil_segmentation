@@ -33,7 +33,7 @@ def load_dataset(data_path, batch_size, distributed, center_crop=False, random_c
     val_dataset = DataLoaderImg(data_path, mode='val', resize_size=resize_size, transform=transformer_valid, color_domain=color_domain)
     
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=16, pin_memory=False)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=False)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=False)
     
     return train_dataloader, val_dataloader
 
@@ -56,8 +56,8 @@ class DataLoaderImg(Dataset):
         #     self.target_feature_paths = list(sorted(Path(self.data_path).glob("test/gtLabels/*.png")))
             
         if self.dataset_type == 'train':
-            self.in_feature_paths = list(sorted(Path(self.data_path).glob("train/rgbImages/*.png")))
-            self.target_feature_paths = list(sorted(Path(self.data_path).glob("train/gtLabels/*.png")))
+            self.in_feature_paths = list(sorted(Path(self.data_path).glob("train/rgbImages_crop/*.png")))
+            self.target_feature_paths = list(sorted(Path(self.data_path).glob("train/gtLabels_crop/*.png")))
         elif self.dataset_type == 'val':    
             self.in_feature_paths = list(sorted(Path(self.data_path).glob("test/rgbImages_crop/*.png")))
             self.target_feature_paths = list(sorted(Path(self.data_path).glob("test/gtLabels_crop/*.png")))
@@ -77,7 +77,8 @@ class DataLoaderImg(Dataset):
             lbl = cv2.cvtColor(cv2.imread(str(self.target_feature_paths[idx])), cv2.COLOR_BGR2YCR_CB)
         else: 
             img = cv2.cvtColor(cv2.imread(str(self.in_feature_paths[idx])), cv2.COLOR_BGR2RGB)
-            lbl = cv2.imread(str(self.target_feature_paths[idx]), cv2.IMREAD_GRAYSCALE)
+            #lbl = cv2.imread(str(self.target_feature_paths[idx]), cv2.IMREAD_GRAYSCALE)
+            lbl = cv2.cvtColor(cv2.imread(str(self.target_feature_paths[idx])), cv2.COLOR_BGR2GRAY)
         #if self.augmentations is not None:
         #    img, lbl = self.augmentations(img, lbl)
         lbl = torch.from_numpy(lbl).long()
