@@ -2,56 +2,56 @@
 # coding: utf-8
 
 import argparse
-import os.path as osp
-from re import I
-import sys
 import os
+import os.path as osp
+import random
+import sys
+from collections import OrderedDict
+from datetime import datetime
 from pathlib import Path
+from re import I
+
 import numpy as np
 import torch
-import torch.optim as optim
 import torch.nn as nn
+import torch.optim as optim
 import tqdm
-from datetime import datetime
-import random
-from collections import OrderedDict
-
 from torch.utils.tensorboard import SummaryWriter
+
 sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
 
+import apex
+import cv2
+from adabelief_pytorch import AdaBelief
+from adamp import AdamP
+from apex import amp, optimizers
+from apex.fp16_utils import *
+from apex.parallel import DistributedDataParallel as DDP
+from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
+from icecream import ic
+from skimage import img_as_ubyte
+from torch.optim.lr_scheduler import StepLR
+from torch_ema import ExponentialMovingAverage
+from warmup_scheduler import GradualWarmupScheduler
+
+import options
+#Add wanddb
+import wandb
 from dataset.dataloader import load_dataset
+from dataset.dataset_utils import MixUp_AUG
+from losses import (CharbonnierLoss, ContentLossWithMask, LossWithMask,
+                    bootstrapped_cross_entropy2d)
+from metrics import runningScore
+from models.DDRNet_23_slim import BasicBlock, DualResNet, DualResNet_imagenet
 from models.hardnet_val import hardnet_val
-from models.DDRNet_23_slim import DualResNet_imagenet, DualResNet, BasicBlock
 #from models.DDRNet_23 import DualResNet_imagenet, DualResNet, BasicBlock
 from models.resnet50_unet_activation import UNetWithResnet50Encoder
 from models.resnet50_unet_activation_DUA import UNetWithResnet50EncoderDUA
-
+from utils.image_utils import batch_PSNR, save_img
 from utils.utils import get_logger, make_dir
-from icecream import ic
-from skimage import img_as_ubyte
-import cv2
-from utils.image_utils import save_img, batch_PSNR
-import options
-from metrics import runningScore
 
-import apex
-from apex.parallel import DistributedDataParallel as DDP
-from apex.fp16_utils import *
-from apex import amp, optimizers
-
-from losses import CharbonnierLoss, ContentLossWithMask, LossWithMask, bootstrapped_cross_entropy2d
-from warmup_scheduler import GradualWarmupScheduler
-from torch.optim.lr_scheduler import StepLR
-from dataset.dataset_utils import MixUp_AUG
-
-from torch_ema import ExponentialMovingAverage
-from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
-from adamp import AdamP
-from adabelief_pytorch import AdaBelief
 #from torchtools.optim import RangerLars
 
-#Add wanddb
-import wandb
 os.environ["WANDB_API_KEY"] = "0b0a03cb580e75ef44b4dff7f6f16ce9cfa8a290"
 #os.environ["WANDB_MODE"] = "dryrun"
 
@@ -88,6 +88,7 @@ class Trainer(object):
         self.best_test = False
 
         self.predict_sucess_frame = 0.0
+        self.acc_lens_detection = 0.0
         
         # Setup Metrics
         self.running_metrics_val = runningScore(self.n_classes)
@@ -426,7 +427,7 @@ class Trainer(object):
             pass
         
         tq = tqdm.tqdm(enumerate(self.val_dataloader), total=len(self.val_dataloader))
-        tq.set_description('Validation')
+        tq.set_description('Soil Detection')
         for index, (img, gt, fname) in tq:
             iter += 1
             img = img.to(self.device)
@@ -464,12 +465,12 @@ class Trainer(object):
                 temp0 = np.concatenate((img[batch]*255, gtRGB*255, overlapRGB*255, predRGB*255),axis=1)
                 save_img(osp.join(self.args.work_dir, 'result_img','test',fname[batch]),temp0.astype(np.uint8), color_domain=self.args.color_domain)
                     
-                print('Filename: {} \t mIoU: {:.2f}'.format(fname[0], _IoU)) 
+                #print('Filename: {} \t mIoU: {:.2f}'.format(fname[0], _IoU)) 
                 #print('Filename: {} \t Lens status: {} \t Soiled ratio: {}'.format(fname[0], status_lens, float(overlap_ratio)))    
                 with open(osp.join(self.args.work_dir, 'soil_detection_result.csv'),'a') as f:
                     f.write('Filename: ,{},mIoU:, {:.2f}\n'.format(fname[0], _IoU))
                     
-            tq.set_postfix(loss='{0:0.4f} '.format(loss_sum/iter))
+            tq.set_postfix(Filename='{}'.format(fname[0]), IoU='{0:0.2f}'.format(_IoU))
         tq.close()
 
         ### Print result of Accuracy###
@@ -488,12 +489,21 @@ class Trainer(object):
         iter = 0
 
         try:
+            os.remove(osp.join(self.args.work_dir, 'camera_failure_gt.csv'))
+            with open(osp.join(self.args.work_dir, 'camera_failure_gt.csv'),'w') as f:
+                f.write('Filename:,Soiled ratio(GT):, Lens status:\n')
+            
             os.remove(osp.join(self.args.work_dir, 'camera_failure_detection_result.csv'))
+            with open(osp.join(self.args.work_dir, 'camera_failure_detection_result.csv'),'w') as f:
+                f.write('Filename:,Soiled ratio(Pred):, Lens status:\n')
+            
         except:
             pass
         
         tq = tqdm.tqdm(enumerate(self.val_dataloader), total=len(self.val_dataloader))
-        tq.set_description('Validation')
+        tq.set_description('Camera Failure Detection')
+        acc_lens_detection_fail = 0
+        acc_lens_detection_true = 0
         for index, (img, gt, fname) in tq:
             iter += 1
             img = img.to(self.device)
@@ -512,60 +522,78 @@ class Trainer(object):
                 self.running_metrics_val.update(gt_, pred_id_)
                 self.running_metrics_val_single.update_single(gt_, pred_id_)
 
-            _score_frame, _class_iou_frame = self.running_metrics_val.get_scores()
-            _mIoU = np.round(_score_frame['Mean_IoU'], 2)
-            
-            
-            if _mIoU > 0.5:
-                self.predict_sucess_frame = self.predict_sucess_frame + 1
-            
-            
-            gt = gt.cpu().detach().numpy()
-            img = img.permute(0, 2, 3, 1).cpu().detach().numpy()
-            pred_ = pred_id.cpu().detach().numpy()
-
             for batch in range(1):
+                gt = gt.cpu().detach().numpy()
+                img = img.permute(0, 2, 3, 1).cpu().detach().numpy()
+                pred_ = pred_id.cpu().detach().numpy()
+            
                 gtRGB = self.decode_segmap(gt[batch])
                 predRGB = self.decode_segmap(pred_[batch])
                 overlapRGB = img[batch] * 0.7 + predRGB * 0.3
 
-                temp0 = np.concatenate((img[batch]*255, gtRGB*255, overlapRGB*255, predRGB*255),axis=1)
-                save_img(osp.join(self.args.work_dir, 'result_img','test',fname[batch]),temp0.astype(np.uint8), color_domain=self.args.color_domain)
-                
                 ###Calculate soil ratio from gt
-                _gtR = gtRGB[:,:,1]*255
-                calculate_region_of_frame_gt = len(_gtR[_gtR>1])
-                overlap_ratio_gt = np.round(float(calculate_region_of_frame_gt / (_gtR.shape[0] * _gtR.shape[1])) * 100, 2)
+                ROI_H = [160,800]
+                ROI_W = [160,1120]
                 
+                _gtR = gtRGB[:,:,1]*255
+                _gtR_ROI = _gtR[ROI_H[0]:ROI_H[1],ROI_W[0]:ROI_W[1]]
+                calculate_region_of_frame_gt = len(_gtR_ROI[_gtR_ROI>1])
+                overlap_ratio_gt = np.round(float(calculate_region_of_frame_gt / (_gtR_ROI.shape[0] * _gtR_ROI.shape[1])) * 100, 2)
                 
                 ###Calculate soil ratio from prediction
                 _predR = predRGB[:,:,1]*255
-                calculate_region_of_frame = len(_predR[_predR>1])
-                overlap_ratio = np.round(float(calculate_region_of_frame / (_predR.shape[0] * _predR.shape[1])) * 100, 2)
+                _predR_ROI = _predR[ROI_H[0]:ROI_H[1],ROI_W[0]:ROI_W[1]]
+                calculate_region_of_frame = len(_predR_ROI[_predR_ROI>1])
+                overlap_ratio = np.round(float(calculate_region_of_frame / (_predR_ROI.shape[0] * _predR_ROI.shape[1])) * 100, 2)
 
-                #print('Soiled ratio: {}%'.format(overlap_ratio * 100))
+                temp0 = np.concatenate((img[batch]*255, overlapRGB*255),axis=1)
+                temp0 = cv2.rectangle(temp0,(160,160),(1120,800), (255,0,0),3)
+                temp0 = cv2.rectangle(temp0,(1280+160,160),(1280+1120,800), (255,0,0),3)
+                save_img(osp.join(self.args.work_dir, 'result_img','camera_lens_failure',fname[batch]),temp0.astype(np.uint8), color_domain=self.args.color_domain)
                 
                 status_type = ['Fail', 'Normal']
-                if overlap_ratio > 70:
+                if overlap_ratio > 30:
                     status_lens = 'Fail'
                 else: 
                     status_lens = 'Normal'
                     
-                print('Filename: {} \t mIoU: {:.2f} \t Soiled ratio(GT): {} \t Soiled ratio(Pred): {} \t Lens status: {}'.format(fname[0], _mIoU, overlap_ratio_gt, overlap_ratio, status_lens)) 
-                #print('Filename: {} \t Lens status: {} \t Soiled ratio: {}'.format(fname[0], status_lens, float(overlap_ratio)))    
-                with open(osp.join(self.args.work_dir, 'camera_failure_detection_result.csv'),'a') as f:
-                    f.write('Filename: ,{},mIoU:, {:.2f},Soiled ratio(GT):, {},Soiled ratio(Pred):, {}, Lens status:, {} \n'.format(fname[0], _mIoU, overlap_ratio_gt, overlap_ratio, status_lens))
+                if overlap_ratio_gt > 30:
+                    status_lens_gt = 'Fail'
+                else: 
+                    status_lens_gt = 'Normal'
                     
-            tq.set_postfix(loss='{0:0.4f} '.format(loss_sum/iter))
+                #print('Filename: {} \t mIoU: {:.2f} \t Soiled ratio(GT): {} \t Soiled ratio(Pred): {} \t Lens status: {}'.format(fname[0], _mIoU, overlap_ratio_gt, overlap_ratio, status_lens)) 
+                #print('Filename: {} \t Lens status: {} \t Soiled ratio: {}'.format(fname[0], status_lens, float(overlap_ratio)))    
+                
+                
+                with open(osp.join(self.args.work_dir, 'camera_failure_gt.csv'),'a') as f:
+                    f.write('{},{}, {} \n'.format(fname[0], overlap_ratio_gt, status_lens_gt))
+                    
+                with open(osp.join(self.args.work_dir, 'camera_failure_detection_result.csv'),'a') as f:
+                    f.write('{},{},{} \n'.format(fname[0], overlap_ratio, status_lens))
+                    
+                if status_lens_gt == status_lens:
+                    self.acc_lens_detection  = self.acc_lens_detection + 1
+                
+                if status_lens_gt == 'Normal':
+                    acc_lens_detection_true += 1
+                else: 
+                    acc_lens_detection_fail += 1
+            #tq.set_postfix(Filename='{}', Soiled_Ratio='{0:0.4f} '.format(fname[0], overlap_ratio))
+            tq.set_postfix(Filename='{}'.format(fname[0]), Soiled_ratio='{0:0.2f}'.format(overlap_ratio), Lens_status='{}'.format(status_lens))
         tq.close()
 
-        accuracy_of_detection = float(self.predict_sucess_frame / iter)
+        accuracy_of_detection = float(self.acc_lens_detection / iter)
         
-        
+         ### Print result of Accuracy###
+        print("\n\n")
+        print("======== Camera lens failure detection ========")
         ### Print result of Accuracy###
-        format_str = " 오염물질검출정확도: ({})  =  인식에 성공한 프레임수: ({}) / 총 오염물질 이미지 프레임수: ({})"
-        print_str = format_str.format(float(accuracy_of_detection), int(self.predict_sucess_frame), int(iter))
+        format_str = " Camera_lens_status_detection_accuracy: ({})  =  Detection_success_frame: ({}) / Total_frame: ({})"
+        print_str = format_str.format(float(accuracy_of_detection), int(self.acc_lens_detection), int(iter))
         print(print_str)
+        print("\n\n")
+        print("Total lens Failure frame:{} \t Total lens Normal frame:{}".format(acc_lens_detection_true, acc_lens_detection_fail))
 
     def train(self):
         """Start training."""
@@ -619,7 +647,7 @@ if __name__ == "__main__":
     #trainer.train()
     
     ###Segment Soil.
-    trainer.test()
+    #trainer.test()
     
     ###Detect camera failure.
-    #trainer.test_camera_failure()
+    trainer.test_camera_failure()

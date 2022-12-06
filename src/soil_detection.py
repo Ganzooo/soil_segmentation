@@ -421,12 +421,16 @@ class Trainer(object):
         iter = 0
 
         try:
+            #os.remove(osp.join(self.args.work_dir, 'soil_detection_result.csv'))
             os.remove(osp.join(self.args.work_dir, 'soil_detection_result.csv'))
+            with open(osp.join(self.args.work_dir, 'soil_detection_result.csv'),'w') as f:
+                #f.write('Filename:,Soiled ratio(GT):, Soiled ratio(Pred):, Lens status:\n')
+                f.write('Filename: ,mIoU:\n')
         except:
             pass
         
         tq = tqdm.tqdm(enumerate(self.val_dataloader), total=len(self.val_dataloader))
-        tq.set_description('Validation')
+        tq.set_description('Soil Detection')
         for index, (img, gt, fname) in tq:
             iter += 1
             img = img.to(self.device)
@@ -437,8 +441,8 @@ class Trainer(object):
                 pred, pred_id = self.model(img)
 
                 #For tensorboard
-                loss = self.criterion(pred, gt)
-                loss_sum += loss.item()
+                #loss = self.criterion(pred, gt)
+                #loss_sum += loss.item()
 
                 pred_id_ = pred_id.cpu().numpy()
                 gt_ = gt.data.cpu().numpy()
@@ -464,12 +468,12 @@ class Trainer(object):
                 temp0 = np.concatenate((img[batch]*255, gtRGB*255, overlapRGB*255, predRGB*255),axis=1)
                 save_img(osp.join(self.args.work_dir, 'result_img','test',fname[batch]),temp0.astype(np.uint8), color_domain=self.args.color_domain)
                     
-                print('Filename: {} \t mIoU: {:.2f}'.format(fname[0], _IoU)) 
+                #print('Filename: {} \t mIoU: {:.2f}'.format(fname[0], _IoU)) 
                 #print('Filename: {} \t Lens status: {} \t Soiled ratio: {}'.format(fname[0], status_lens, float(overlap_ratio)))    
                 with open(osp.join(self.args.work_dir, 'soil_detection_result.csv'),'a') as f:
-                    f.write('Filename: ,{},mIoU:, {:.2f}\n'.format(fname[0], _IoU))
+                    f.write('{},{:.2f}\n'.format(fname[0], _IoU))
                     
-            tq.set_postfix(loss='{0:0.4f} '.format(loss_sum/iter))
+            tq.set_postfix(Filename='{}'.format(fname[0]), IoU='{0:0.2f}'.format(_IoU))
         tq.close()
 
         ### Print result of Accuracy###

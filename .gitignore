@@ -152,3 +152,5 @@ scripts/wandb/
 
 #gz
 cur/*
+wandb/latest-run
+wandb/*
