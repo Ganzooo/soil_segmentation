@@ -12,8 +12,12 @@ class Options():
 
         ### General settings:
         parser.add_argument('--data_path', '-dp', type=str, help='Training data path',
+<<<<<<< HEAD
                             #default='//dataset2/soiling_dataset_new/')
                             default='/dataset/Woodscape/soiling_dataset_nodist_150/')
+=======
+                            default='//dataset2/soiling_dataset_new/')
+>>>>>>> d64ce0ab45b756d7c0b254e3e1f2a824c085ef48
         parser.add_argument('--batch_size', '-bs', type=int, help='batch size',
                             default=1)
         parser.add_argument('--max_epoch', '-me', type=int, help='max epoch',
@@ -25,6 +29,7 @@ class Options():
                             #default='/workspace/NETWORK/ketiai_new/camera_lens_glare/checkpoints/glare_latestmodel.pth')
                             default='/workspace/05_SOIL_DETECION/soil_segmentation/checkpoints/soil_segment_bestmodel_0_822.pth')
         parser.add_argument('--width', type=int, help='feature map width',
+<<<<<<< HEAD
                             #default=1280)
                             #default=512)
                             default=992)
@@ -32,6 +37,13 @@ class Options():
                             #default=960)
                             #default=512)
                             default=736)
+=======
+                            default=1280)
+                            #default=512)
+        parser.add_argument('--height', type=int, help='feature map height',
+                            default=960)
+                            #default=512)
+>>>>>>> d64ce0ab45b756d7c0b254e3e1f2a824c085ef48
         parser.add_argument('--resume', type=str, help='Train process resume cur/bcnn_latestmodel.pt',
                             #default='/workspace/NETWORK/camera_lens_glare/checkpoints/glare_bestmodel_25.205883026123047.pth')
                             #default= '/workspace/NETWORK/ketiai_new/camera_lens_glare/checkpoints/glare_latestmodel.pth')
