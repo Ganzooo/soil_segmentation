@@ -15,6 +15,7 @@ import tqdm
 from datetime import datetime
 import random
 from collections import OrderedDict
+import time
 
 from torch.utils.tensorboard import SummaryWriter
 sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
@@ -61,6 +62,8 @@ np.random.seed(1234)
 torch.manual_seed(1234)
 torch.cuda.manual_seed_all(1234)
 
+import warnings
+warnings.filterwarnings("ignore")
 class Trainer(object):
     def __init__(self, args, logger, writer):
         self.data_path=args.data_path,
@@ -246,173 +249,7 @@ class Trainer(object):
             # 2. Save model inputs and hyperparameters
             self.config = wandb.config
             #self.config.update(args)
-
-    def step_train(self, mode):
-        lr = self.optimizer.param_groups[0]['lr']
-        ic('Start {} -> epoch: {}, lr: {}'.format(mode,self.epo, lr))
-        self.model.train()
-
-        self.best_test = False
-        loss_sum = 0
-        iter = 0
-
-        psnr_rgb = []
-
-        tq = tqdm.tqdm(enumerate(self.train_dataloader), total=len(self.train_dataloader))
-        tq.set_description('Epoch {}, lr {}'.format(self.epo, lr))
-        for index, (img, gt, fname) in tq:
-            iter += 1
-
-            img = img.to(self.device)
-            gt = gt.to(self.device)
-
-            ### Predict image ###
-            pred, pred_id = self.model(img)
-
-            if 'mask' in self.args.loss_type:
-                loss = self.criterion(pred, gt, img)
-            else:
-                loss = self.criterion(pred, gt)
-
-            self.optimizer.zero_grad()
-            if self.args.apex:
-                with amp.scale_loss(loss, self.optimizer) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                loss.backward()
-            self.optimizer.step()
-
-            # Update the moving average with the new parameters from the last optimizer step
-            if self.args.ema:
-                self.ema_model.update()
-
-            loss_sum += loss.item()
-
-            # Dump train images 
-            if self.args.save_image_train and np.mod(self.epo, self.args.save_print_interval) == 0:
-                if iter < 20:
-                    gt = gt.cpu().detach().numpy()
-                    img = img.permute(0, 2, 3, 1).cpu().detach().numpy()
-                    pred_ = pred_id.cpu().detach().numpy()
-
-                    gtRGB = self.decode_segmap(gt[0])
-                    predRGB = self.decode_segmap(pred_[0])
-                    overlapRGB = img[0] * 0.7 + predRGB * 0.3
-                    
-                    temp0 = np.concatenate((img[0]*255, gtRGB*255, overlapRGB*255),axis=1)
-                    save_img(osp.join(self.args.work_dir, 'result_img','train', str(self.epo) + '/batches_'+ str(iter) + '.jpg'),temp0.astype(np.uint8), color_domain=self.args.color_domain)
-
-            tq.set_postfix(loss='{0:0.4f}'.format(loss_sum / iter))
-        tq.close()
-
-        self.scheduler.step()
-
-        ### Tensorboard ###
-        avg_loss = loss_sum / iter
-        self.writer.add_scalar("Loss/train", avg_loss, self.epo)
-        self.writer.add_scalar("Scheduler/lr_value", float(lr), self.epo)
-        
-        ### Save latest model ###
-        if np.mod(self.epo, self.save_model_interval) == 0:
-            _state = {
-                "epoch": self.epo + 1,
-                "model_state": self.model.state_dict(),
-                "optimizer_state": self.optimizer.state_dict(),
-            } 
-            _save_path_latest = osp.join(self.args.work_dir,'weight', '{}_latestmodel.pth'.format('soil_segment'))
-            torch.save(_state,_save_path_latest)
-        
-        ### Print result of loss and scheduler###
-        format_str = "epoch: {}\n avg loss: {:3f}, scheduler: {}"
-        print_str = format_str.format(int(self.epo), float(avg_loss), float(lr))
-        ic(print_str)
-        self.logger.info(print_str)
-        if args.wandb:
-            wandb.log({"train/avg loss": avg_loss})
-            wandb.log({"train/lr": float(lr)})
-
-
-    def step_val(self, mode):
-        self.model.eval()
-        
-        ic('Start {} -> epoch: {}'.format(mode,self.epo))
-        loss_sum = 0
-        iter = 0
-
-        tq = tqdm.tqdm(enumerate(self.val_dataloader), total=len(self.val_dataloader))
-        tq.set_description('Validation')
-        for index, (img, gt, fname) in tq:
-            iter += 1
-            img = img.to(self.device)
-            gt = gt.to(self.device)
-
-            with torch.no_grad():
-                ###Pred image ###
-                pred, pred_id = self.model(img)
-
-                #For tensorboard
-                loss = self.criterion(pred, gt)
-                loss_sum += loss.item()
-
-                pred_id_ = pred_id.cpu().numpy()
-                gt_ = gt.data.cpu().numpy()
-                self.running_metrics_val.update(gt_, pred_id_)
-
-            if self.args.save_image_val and np.mod(self.epo, self.args.save_print_interval) == 0:
-                gt = gt.cpu().detach().numpy()
-                img = img.permute(0, 2, 3, 1).cpu().detach().numpy()
-                pred_ = pred_id.cpu().detach().numpy()
-
-                for batch in range(self.args.batch_size-10):
-                    gtRGB = self.decode_segmap(gt[batch])
-                    predRGB = self.decode_segmap(pred_[batch])
-                    overlapRGB = img[batch] * 0.7 + predRGB * 0.3
-
-                    temp0 = np.concatenate((img[batch]*255, gtRGB*255, overlapRGB*255),axis=1)
-                    save_img(osp.join(self.args.work_dir, 'result_img','validation',fname[batch]),temp0.astype(np.uint8), color_domain=self.args.color_domain)
-
-            tq.set_postfix(loss='{0:0.4f} '.format(loss_sum/iter))
-        tq.close()
-
-        score, class_iou = self.running_metrics_val.get_scores()
-
-        self.running_metrics_val.reset()
-
-        ### Save best model ###
-        if score['Mean_IoU'] > self.best_miou:
-            self.best_miou = score['Mean_IoU']
-            _state = {
-                "epoch": index + 1,
-                "model_state": self.model.state_dict(),
-                "optimizer_state": self.optimizer.state_dict(),
-            } 
-
-            _save_path = osp.join(self.args.work_dir,'weight', '{}_bestmodel_{}.pth'.format('soil_segment',str(format(float(self.best_miou),'.3f'))))
-            directory = os.path.dirname(_save_path)
-            if not os.path.exists(directory):
-                os.makedirs(directory)
-            torch.save(_state, _save_path)
-        
-        ### Print result of PSNR###
-        format_str = "epoch: {}\n Overall_Acc: {:3f}, Mean_Acc: {:3f}, Mean_IoU: {:3f}"
-        print_str = format_str.format(int(self.epo), float(score['Overall_Acc']), float(score['Mean_Acc']), float(score['Mean_IoU']))
-        ic(print_str)
-        self.logger.info(print_str)
-
-        ### Tensorboard ###
-        self.writer.add_scalar("Val/loss", loss_sum / iter, self.epo)
-        for k, v in score.items():
-            writer.add_scalar("Val/{}".format(k), v, self.epo + 1)
-        for k, v in class_iou.items():
-            self.logger.info("{}: {}".format(k, v))
-            writer.add_scalar("Val/cls_{}".format(k), v, self.epo + 1)
-
-        if args.wandb:
-            wandb.log({"val/avg loss": loss_sum / iter})
-            wandb.log({"Val/Overall_Acc": score['Overall_Acc']})
-            wandb.log({"Val/Mean_Acc": score['Mean_Acc']})
-            wandb.log({"Val/Mean_IoU": score['Mean_IoU']})
-            
+  
     def step_test(self, mode):
         self.model.eval()
         
@@ -429,6 +266,8 @@ class Trainer(object):
         except:
             pass
         
+        start_t = time.perf_counter()
+        
         tq = tqdm.tqdm(enumerate(self.val_dataloader), total=len(self.val_dataloader))
         tq.set_description('Soil Detection')
         for index, (img, gt, fname) in tq:
@@ -441,8 +280,8 @@ class Trainer(object):
                 pred, pred_id = self.model(img)
 
                 #For tensorboard
-                loss = self.criterion(pred, gt)
-                loss_sum += loss.item()
+                #loss = self.criterion(pred, gt)
+                #loss_sum += loss.item()
 
                 pred_id_ = pred_id.cpu().numpy()
                 gt_ = gt.data.cpu().numpy()
@@ -457,25 +296,28 @@ class Trainer(object):
             if _IoU > 0.5:
                 self.predict_sucess_frame = self.predict_sucess_frame + 1    
 
-            for batch in range(1):    
-                gt = gt.cpu().detach().numpy()
-                img = img.permute(0, 2, 3, 1).cpu().detach().numpy()
-                pred_ = pred_id.cpu().detach().numpy()
-                gtRGB = self.decode_segmap(gt[batch])
-                predRGB = self.decode_segmap(pred_[batch])
-                overlapRGB = img[batch] * 0.7 + predRGB * 0.3
+            if self.args.save_image_val:
+                for batch in range(self.args.batch_size):    
+                    gt = gt.cpu().detach().numpy()
+                    img = img.permute(0, 2, 3, 1).cpu().detach().numpy()
+                    pred_ = pred_id.cpu().detach().numpy()
+                    gtRGB = self.decode_segmap(gt[batch])
+                    predRGB = self.decode_segmap(pred_[batch])
+                    overlapRGB = img[batch] * 0.7 + predRGB * 0.3
 
-                temp0 = np.concatenate((img[batch]*255, gtRGB*255, overlapRGB*255, predRGB*255),axis=1)
-                save_img(osp.join(self.args.work_dir, 'result_img','test',fname[batch]),temp0.astype(np.uint8), color_domain=self.args.color_domain)
-                    
-                #print('Filename: {} \t mIoU: {:.2f}'.format(fname[0], _IoU)) 
-                #print('Filename: {} \t Lens status: {} \t Soiled ratio: {}'.format(fname[0], status_lens, float(overlap_ratio)))    
-                with open(osp.join(self.args.work_dir, 'soil_detection_result.csv'),'a') as f:
-                    f.write('{},{:.2f}\n'.format(fname[0], _IoU))
+                    temp0 = np.concatenate((img[batch]*255, gtRGB*255, overlapRGB*255, predRGB*255),axis=1)
+                    save_img(osp.join(self.args.work_dir, 'result_img','test',fname[batch]),temp0.astype(np.uint8), color_domain=self.args.color_domain)
+                        
+                    #print('Filename: {} \t mIoU: {:.2f}'.format(fname[0], _IoU)) 
+                    #print('Filename: {} \t Lens status: {} \t Soiled ratio: {}'.format(fname[0], status_lens, float(overlap_ratio)))    
+                    with open(osp.join(self.args.work_dir, 'soil_detection_result.csv'),'a') as f:
+                        f.write('{},{:.2f}\n'.format(fname[0], _IoU))
                     
             tq.set_postfix(Filename='{}'.format(fname[0]), IoU='{0:0.2f}'.format(_IoU))
         tq.close()
 
+        end_t = time.perf_counter()
+        
         ### Print result of Accuracy###
         print("\n\n")
         print("======== Soiled detection accuracy ========")
@@ -483,6 +325,7 @@ class Trainer(object):
         format_str = " 오염물질검출정확도: ({})  =  인식에 성공한 프레임수: ({}) / 총 오염물질 이미지 프레임수: ({})"
         print_str = format_str.format(float(accuracy_of_detection), int(self.predict_sucess_frame), int(iter))
         print(print_str)
+        print("FPS:{:.2f}".format(len(self.val_dataloader)/(end_t-start_t)))
         
     def step_test_camera_failure(self, mode):
         self.model.eval()

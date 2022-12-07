@@ -15,14 +15,15 @@ class Options():
                             #default='//dataset2/soiling_dataset_new/')
                             default='/dataset/Woodscape/soiling_dataset_nodist_150/')
         parser.add_argument('--batch_size', '-bs', type=int, help='batch size',
-                            default=10)
+                            default=1)
         parser.add_argument('--max_epoch', '-me', type=int, help='max epoch',
                             default=100)
         parser.add_argument('--pretrained_model', '-p', type=str, help='Pretrained model path',
-                            default='/workspace/16_Demo/soil_segmentation/checkpoints/soil_segment_bestmodel_0_822.pth')
-                            #default=None)
+                            #default='/workspace/16_Demo/soil_segmentation/checkpoints/soil_segment_bestmodel_0_822.pth')
+                            default=None)
         parser.add_argument('--test_model', '-t', type=str, help='Pretrained model path',
-                            default='/workspace/16_Demo/soil_segmentation/checkpoints/soil_segment_bestmodel_0_905_dist50.pth')
+                            #default='/workspace/16_Demo/soil_segmentation/checkpoints/soil_segment_bestmodel_0_905_dist50.pth')
+                            default='/workspace/16_Demo/soil_segmentation/checkpoints/soil_segment_bestmodel_0_879_dist150.pth')
                             #default='/workspace/16_Demo/soil_segmentation/checkpoints/soil_segment_bestmodel_0_822.pth')
         parser.add_argument('--width', type=int, help='feature map width',
                             #default=1280)
@@ -59,7 +60,7 @@ class Options():
         parser.add_argument('--train_workers', type=int, help='train_dataloader workers', default=16)
         parser.add_argument('--eval_workers', type=int, help='eval_dataloader workers', default=8)
         parser.add_argument('--dataset', type=str, default ='glare_512', help='Dataset type: glare_512, ')
-        parser.add_argument('--optimizer', type=str,  help='optimizer for training adamw, adam, sgd, adabelief', default ='adabelief')
+        parser.add_argument('--optimizer', type=str,  help='optimizer for training adamw, adam, sgd, adabelief', default ='adam')
         parser.add_argument('--scheduler', type=str,  help='scheduler for training cosine, lambda, cosine_wr', default ='cosine')
         parser.add_argument('--lr_initial', type=float, help='initial learning rate', default=0.0002)
         parser.add_argument('--weight_decay', type=float, help='weight decay', default=0.00000001)
@@ -67,5 +68,4 @@ class Options():
         parser.add_argument('--center_crop', type=distutils.util.strtobool, help='use center crop', default=False)
         parser.add_argument('--ema', type=distutils.util.strtobool, help='use ema', default=False)
         parser.add_argument('--wandb', type=distutils.util.strtobool, help='use wandb', default=False)
-
         return parser
